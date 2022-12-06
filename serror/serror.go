@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/rs/zerolog/log"
+	"github.com/DeniesKresna/gohelper/utlog"
 )
 
 type Serror struct {
@@ -37,7 +37,7 @@ func NewWithErrorComment(err error, statusCode int, comment string) SError {
 	if err != nil {
 		sysErr.Error = err
 		sysErr.ErrorMessage = err.Error()
-		log.Error().Msg(err.Error())
+		utlog.Error(err)
 	}
 
 	if statusCode != 0 {
@@ -66,7 +66,7 @@ func NewWithCommentMessage(statusCode int, comment string, message string) (sysE
 	if sysErr.Error == nil {
 		sysErr.Error = errors.New(message)
 		sysErr.ErrorMessage = message
-		log.Error().Msg(message)
+		utlog.Error(message)
 	}
 
 	if statusCode != 0 {
@@ -97,7 +97,7 @@ func NewWithErrorCommentMessage(err error, statusCode int, comment string, messa
 	if err != nil {
 		sysErr.Error = err
 		sysErr.ErrorMessage = err.Error()
-		log.Error().Msg(err.Error())
+		utlog.Error(err)
 	}
 
 	if statusCode != 0 {
@@ -127,7 +127,7 @@ func NewWithCommentMessageValidation(statusCode int, comment string, message str
 	if sysErr.Error == nil {
 		sysErr.Error = errors.New(message)
 		sysErr.ErrorMessage = message
-		log.Error().Msg(message)
+		utlog.Error(message)
 	}
 
 	if statusCode != 0 {

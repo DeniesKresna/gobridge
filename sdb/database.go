@@ -72,15 +72,25 @@ func (d *DBInstance) Get(dest interface{}, query string, args ...interface{}) er
 		err     error
 	)
 
-	if !utinterface.IsPointerOfStruct(dest) {
-		return errors.New("destination should be pointer of struct")
+	if !utinterface.IsPointer(dest) {
+		return errors.New("destination should be pointer")
 	}
 
-	if d.Tx != nil {
-		resp, err = d.Tx.Queryx(query, args...)
+	if utinterface.IsPointerOfStruct(dest) {
+		if d.Tx != nil {
+			resp, err = d.Tx.Queryx(query, args...)
+		} else {
+			resp, err = d.DB.Queryx(query, args...)
+		}
 	} else {
-		resp, err = d.DB.Queryx(query, args...)
+		if d.Tx != nil {
+			err = d.Tx.Get(dest, query, args...)
+		} else {
+			err = d.DB.Get(dest, query, args...)
+		}
+		return nil
 	}
+
 	if err != nil {
 		return err
 	}
@@ -123,7 +133,7 @@ func (d *DBInstance) Select(dest interface{}, query string, args ...interface{})
 	}
 
 	reflectDestType := reflect.TypeOf(dest).Elem().Elem()
-	reflectDestValue := reflect.ValueOf(dest)
+	reflectDestValue := reflect.ValueOf(dest).Elem()
 
 	if d.Tx != nil {
 		resp, err = d.Tx.Queryx(query, args...)
@@ -141,13 +151,15 @@ func (d *DBInstance) Select(dest interface{}, query string, args ...interface{})
 		}
 
 		intPtr := reflect.New(reflectDestType)
-		err = d.ScanToStruct(respMap, intPtr)
+
+		err = d.ScanToStruct(respMap, intPtr.Interface())
 		if err != nil {
 			return err
 		}
 
-		reflectDestValue = reflect.Append(reflectDestValue, intPtr)
+		reflectDestValue = reflect.Append(reflectDestValue, intPtr.Elem())
 	}
+	reflect.ValueOf(dest).Elem().Set(reflectDestValue)
 
 	return nil
 }
