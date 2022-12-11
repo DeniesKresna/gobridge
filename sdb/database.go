@@ -3,14 +3,11 @@ package sdb
 import (
 	"database/sql"
 	"errors"
-	"fmt"
 	"reflect"
-	"strconv"
-	"strings"
-	"time"
 
 	"github.com/DeniesKresna/gohelper/utinterface"
 	"github.com/DeniesKresna/gohelper/utlog"
+
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 )
@@ -31,11 +28,13 @@ type DBInstance struct {
 //
 // dsn is the connection config.
 // exp: user:password!@tcp(localhost:3306)/dbName?parseTime=true
-func InitDB(dbDriver string, dbTag string, dsn string) (dbIns *DBInstance, err error) {
+func InitDB(dbDriver string, dsn string) (dbIns *DBInstance, err error) {
 	db, err := sqlx.Connect(dbDriver, dsn)
 	if err != nil {
 		utlog.Errorf("Error while get db, err: %+v", err)
 	}
+
+	dbTag := "db"
 
 	dbIns = &DBInstance{
 		DB:  db,
@@ -65,11 +64,10 @@ func (d *DBInstance) Exec(query string, args ...any) (sql.Result, error) {
 // query is the sql statement
 //
 // args is the argument to be passed to the query
-func (d *DBInstance) Get(dest interface{}, query string, args ...interface{}) error {
+func (d *DBInstance) Take(dest interface{}, query string, args ...interface{}) error {
 	var (
-		resp    *sqlx.Rows
-		respMap = make(map[string]interface{})
-		err     error
+		resp *sqlx.Rows
+		err  error
 	)
 
 	if !utinterface.IsPointer(dest) {
@@ -95,22 +93,20 @@ func (d *DBInstance) Get(dest interface{}, query string, args ...interface{}) er
 		return err
 	}
 
+	count := 0
 	for resp.Next() {
-		err = resp.MapScan(respMap)
+		err = resp.StructScan(dest)
 		if err != nil {
 			return err
 		}
+		count++
 		break
 	}
 
-	if len(respMap) <= 0 {
+	if count <= 0 {
 		return errors.New("No data found")
 	}
 
-	err = d.ScanToStruct(respMap, dest)
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -123,9 +119,8 @@ func (d *DBInstance) Get(dest interface{}, query string, args ...interface{}) er
 // args is the argument to be passed to the query
 func (d *DBInstance) Select(dest interface{}, query string, args ...interface{}) error {
 	var (
-		resp    *sqlx.Rows
-		respMap = make(map[string]interface{})
-		err     error
+		resp *sqlx.Rows
+		err  error
 	)
 
 	if !utinterface.IsPointerOfSliceOfStruct(dest) {
@@ -145,14 +140,9 @@ func (d *DBInstance) Select(dest interface{}, query string, args ...interface{})
 	}
 
 	for resp.Next() {
-		err = resp.MapScan(respMap)
-		if err != nil {
-			return err
-		}
-
 		intPtr := reflect.New(reflectDestType)
 
-		err = d.ScanToStruct(respMap, intPtr.Interface())
+		err = resp.StructScan(intPtr.Interface())
 		if err != nil {
 			return err
 		}
@@ -162,6 +152,75 @@ func (d *DBInstance) Select(dest interface{}, query string, args ...interface{})
 	reflect.ValueOf(dest).Elem().Set(reflectDestValue)
 
 	return nil
+}
+
+// Get only one data row from sql with original sqlx Get
+//
+// dest is destination of the struct. should be pointer
+//
+// query is the sql statement
+//
+// args is the argument to be passed to the query
+func (d *DBInstance) Get(dest interface{}, query string, args ...interface{}) error {
+	var (
+		err error
+	)
+
+	if !utinterface.IsPointer(dest) {
+		return errors.New("destination should be pointer")
+	}
+
+	if d.Tx != nil {
+		err = d.Tx.Get(dest, query, args...)
+	} else {
+		err = d.DB.Get(dest, query, args...)
+	}
+
+	return err
+}
+
+// Select some data rows from sql with original sqlx Queryx
+//
+// dest is destination of the struct. should be pointer
+//
+// query is the sql statement
+//
+// args is the argument to be passed to the query
+func (d *DBInstance) Queryx(dest interface{}, query string, args ...interface{}) error {
+	var (
+		resp *sqlx.Rows
+		err  error
+	)
+
+	if !utinterface.IsPointerOfSliceOfStruct(dest) {
+		return errors.New("dest should be slice of pointer of struct")
+	}
+
+	reflectDestType := reflect.TypeOf(dest).Elem().Elem()
+	reflectDestValue := reflect.ValueOf(dest).Elem()
+
+	if d.Tx != nil {
+		resp, err = d.Tx.Queryx(query, args...)
+	} else {
+		resp, err = d.DB.Queryx(query, args...)
+	}
+	if err != nil {
+		return err
+	}
+
+	for resp.Next() {
+		intPtr := reflect.New(reflectDestType)
+
+		err = resp.StructScan(intPtr.Interface())
+		if err != nil {
+			return err
+		}
+
+		reflectDestValue = reflect.Append(reflectDestValue, intPtr.Elem())
+	}
+	reflect.ValueOf(dest).Elem().Set(reflectDestValue)
+
+	return err
 }
 
 // Start DB Transaction
@@ -208,79 +267,4 @@ func (d *DBInstance) SubmitTx(err error) error {
 		return d.Rollback()
 	}
 	return d.Commit()
-}
-
-func (d *DBInstance) ScanToStruct(ins map[string]interface{}, destination interface{}) (errs error) {
-	// It's possible we can cache this, which is why precompute all these ahead of time.
-	getDBTagValues := func(t reflect.StructTag) string {
-		if jt, ok := t.Lookup(d.Tag); ok {
-			tagValue := strings.TrimSpace(strings.Split(jt, ",")[0])
-			if tagValue != "-" {
-				return tagValue
-			}
-		}
-		return ""
-	}
-
-	convertInterfaceToStruct := func(in map[string]interface{}, dest interface{}, getDBTagValue func(t reflect.StructTag) string) (err error) {
-		reflectValue := reflect.ValueOf(dest).Elem()
-		reflectType := reflectValue.Type()
-
-		for i := 0; i < reflectValue.NumField(); i++ {
-			typeField := reflectType.Field(i)
-			tag := typeField.Tag
-			dbKey := getDBTagValue(tag)
-			if dbKey == "" {
-				continue
-			}
-
-			dbVal, ok := in[dbKey]
-			if !ok || dbVal == nil {
-				continue
-			}
-
-			f := reflectValue.FieldByIndex(typeField.Index)
-			fieldValue := f.Interface()
-
-			if f.IsValid() {
-				if f.CanSet() {
-					switch fieldValue.(type) {
-					case int, int64:
-						strVal := fmt.Sprintf("%d", dbVal)
-						realVal, err := strconv.Atoi(strVal)
-						if err != nil {
-							return err
-						}
-						f.SetInt(int64(realVal))
-						continue
-					case string:
-						strVal := fmt.Sprintf("%s", dbVal)
-						f.SetString(strVal)
-						continue
-					case bool:
-						strVal := fmt.Sprintf("%d", dbVal)
-						var realVal bool
-						if strVal == "1" {
-							realVal = true
-						} else {
-							realVal = false
-						}
-						f.SetBool(realVal)
-						continue
-					case time.Time:
-						strVal := fmt.Sprintf("%s", dbVal)
-						tm, err := time.Parse("2006-01-02 15:04:05 Z0700 MST", strVal)
-						if err != nil {
-							return err
-						}
-						f.Set(reflect.ValueOf(tm))
-						continue
-					}
-				}
-			}
-		}
-		return nil
-	}
-
-	return convertInterfaceToStruct(ins, destination, getDBTagValues)
 }
