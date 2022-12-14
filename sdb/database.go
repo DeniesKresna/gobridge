@@ -93,6 +93,8 @@ func (d *DBInstance) Take(dest interface{}, query string, args ...interface{}) e
 		return err
 	}
 
+	defer resp.Close()
+
 	count := 0
 	for resp.Next() {
 		err = resp.StructScan(dest)
@@ -139,6 +141,8 @@ func (d *DBInstance) Select(dest interface{}, query string, args ...interface{})
 		return err
 	}
 
+	defer resp.Close()
+
 	for resp.Next() {
 		intPtr := reflect.New(reflectDestType)
 
@@ -175,50 +179,6 @@ func (d *DBInstance) Get(dest interface{}, query string, args ...interface{}) er
 	} else {
 		err = d.DB.Get(dest, query, args...)
 	}
-
-	return err
-}
-
-// Select some data rows from sql with original sqlx Queryx
-//
-// dest is destination of the struct. should be pointer
-//
-// query is the sql statement
-//
-// args is the argument to be passed to the query
-func (d *DBInstance) Queryx(dest interface{}, query string, args ...interface{}) error {
-	var (
-		resp *sqlx.Rows
-		err  error
-	)
-
-	if !utinterface.IsPointerOfSliceOfStruct(dest) {
-		return errors.New("dest should be slice of pointer of struct")
-	}
-
-	reflectDestType := reflect.TypeOf(dest).Elem().Elem()
-	reflectDestValue := reflect.ValueOf(dest).Elem()
-
-	if d.Tx != nil {
-		resp, err = d.Tx.Queryx(query, args...)
-	} else {
-		resp, err = d.DB.Queryx(query, args...)
-	}
-	if err != nil {
-		return err
-	}
-
-	for resp.Next() {
-		intPtr := reflect.New(reflectDestType)
-
-		err = resp.StructScan(intPtr.Interface())
-		if err != nil {
-			return err
-		}
-
-		reflectDestValue = reflect.Append(reflectDestValue, intPtr.Elem())
-	}
-	reflect.ValueOf(dest).Elem().Set(reflectDestValue)
 
 	return err
 }
