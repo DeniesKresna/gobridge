@@ -62,8 +62,10 @@ func SetErrx(span trace.Span, errx serror.SError) {
 		return
 	}
 	err := errx.GetError()
-	span.RecordError(err)
-	span.SetStatus(codes.Error, err.Error())
+	if err != nil {
+		span.RecordError(err)
+	}
+	span.SetStatus(codes.Error, errx.GetComment())
 }
 
 func Start(ctx context.Context, spanName string) (span trace.Span, ct context.Context) {
