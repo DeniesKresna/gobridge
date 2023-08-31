@@ -13,7 +13,7 @@ type Serror struct {
 	Comment      string      `json:"comment"`
 	Message      string      `json:"-"`
 	ErrorMessage string      `json:"error_message"`
-	ErrorLine    string      `json:"error_line"`
+	ErrorLine    []string    `json:"error_lines"`
 	Error        error       `json:"-"`
 	StatusCode   int         `json:"-"`
 	Validation   interface{} `json:"validation"`
@@ -21,9 +21,9 @@ type Serror struct {
 
 // Can use this wherever in code
 //
-// Error is used for show error detail from system
+// # Error is used for show error detail from system
 //
-// Usually comment is used for showing which process end with error
+// # Usually comment is used for showing which process end with error
 //
 // [Status Code List] https://restfulapi.net/http-status-codes/
 func NewWithErrorComment(err error, statusCode int, comment string) SError {
@@ -31,7 +31,7 @@ func NewWithErrorComment(err error, statusCode int, comment string) SError {
 	sysErr := &Serror{
 		Comment:    comment,
 		StatusCode: 500,
-		ErrorLine:  traceError(),
+		ErrorLine:  getErrorFlow(),
 	}
 
 	if err != nil {
@@ -48,9 +48,9 @@ func NewWithErrorComment(err error, statusCode int, comment string) SError {
 
 // Usually use this in usecase
 //
-// Message is used for build message in response
+// # Message is used for build message in response
 //
-// Comment is used for showing which process end with error
+// # Comment is used for showing which process end with error
 //
 // [Status Code List] https://restfulapi.net/http-status-codes/
 func NewWithCommentMessage(statusCode int, comment string, message string) (sysErr *Serror) {
@@ -60,7 +60,7 @@ func NewWithCommentMessage(statusCode int, comment string, message string) (sysE
 		Message:    message,
 		Comment:    comment,
 		StatusCode: 500,
-		ErrorLine:  traceError(),
+		ErrorLine:  getErrorFlow(),
 	}
 
 	if sysErr.Error == nil {
@@ -77,11 +77,11 @@ func NewWithCommentMessage(statusCode int, comment string, message string) (sysE
 
 // Usually use this in usecase
 //
-// Error is used for show error detail from system
+// # Error is used for show error detail from system
 //
-// Message is used for build message in response
+// # Message is used for build message in response
 //
-// Comment is used for showing which process end with error
+// # Comment is used for showing which process end with error
 //
 // [Status Code List] https://restfulapi.net/http-status-codes/
 func NewWithErrorCommentMessage(err error, statusCode int, comment string, message string) (sysErr *Serror) {
@@ -91,7 +91,7 @@ func NewWithErrorCommentMessage(err error, statusCode int, comment string, messa
 		Message:    message,
 		Comment:    comment,
 		StatusCode: 500,
-		ErrorLine:  traceError(),
+		ErrorLine:  getErrorFlow(),
 	}
 
 	if err != nil {
@@ -108,9 +108,9 @@ func NewWithErrorCommentMessage(err error, statusCode int, comment string, messa
 
 // Usually use this in usecase specifically in validation process
 //
-// Message is used for build message in response
+// # Message is used for build message in response
 //
-// Comment is used for showing which process end with error
+// # Comment is used for showing which process end with error
 //
 // [Status Code List] https://restfulapi.net/http-status-codes/
 func NewWithCommentMessageValidation(statusCode int, comment string, message string, validation map[string]string) (sysErr *Serror) {
@@ -121,7 +121,7 @@ func NewWithCommentMessageValidation(statusCode int, comment string, message str
 		Comment:    comment,
 		Validation: validation,
 		StatusCode: 500,
-		ErrorLine:  traceError(),
+		ErrorLine:  getErrorFlow(),
 	}
 
 	if sysErr.Error == nil {
@@ -187,7 +187,7 @@ func (s *Serror) GetError() error {
 	return s.Error
 }
 
-func (s *Serror) GetErrorLine() string {
+func (s *Serror) GetErrorLine() []string {
 	return s.ErrorLine
 }
 

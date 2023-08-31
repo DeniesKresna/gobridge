@@ -25,6 +25,6 @@ type SError interface {
 	GetComment() string
 	GetStatusCode() int
 	GetError() error
-	GetErrorLine() string
+	GetErrorLine() []string
 	GetValidation() interface{}
 }
